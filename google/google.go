@@ -68,26 +68,46 @@ var rdb = redis.NewClient(&redis.Options{
 	DB:       0,  // use default DB
 })
 
+// CheckReceiptByPurchaseToken 테스트 용도: Purchase Token으로 Order ID 알아내기
+func CheckReceiptByPurchaseToken() {
+	packageName := os.Getenv("VOIDCHECKER_ANDROID_PACKAGE_NAME")
+	credPath := os.Getenv("VOIDCHECKER_SERVICE_ACCOUNT_CRED_PATH")
+
+	cachedAccessToken, err := getCachedAccessToken(packageName, credPath)
+	if err != nil {
+		panic(err)
+	}
+
+	productId := os.Getenv("VOIDCHECKER_ANDROID_TEST_PRODUCT_ID")
+	purchaseToken := os.Getenv("VOIDCHECKER_ANDROID_TEST_PURCHASE_TOKEN")
+	getUrl := fmt.Sprintf("https://www.googleapis.com/androidpublisher/v3/applications/%v/purchases/products/%v/tokens/%v?access_token=%v", packageName, productId, purchaseToken, cachedAccessToken)
+
+	resp, err := http.Get(getUrl)
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}(resp.Body)
+
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	str := string(respBody)
+	println("==================================")
+	println(str)
+	println("==================================")
+}
+
 func CheckGoogle() {
 	packageName := os.Getenv("VOIDCHECKER_ANDROID_PACKAGE_NAME")
 	credPath := os.Getenv("VOIDCHECKER_SERVICE_ACCOUNT_CRED_PATH")
 
-	cachedAccessTokenKey := fmt.Sprintf("voidedreceiptchecker:%s:cachedAccessTokenKey", packageName)
-	voidedPurchasesHashKey := fmt.Sprintf("voidedreceiptchecker:%s:voidedPurchases", packageName)
-
-	cachedAccessToken, err := rdb.Get(ctx, cachedAccessTokenKey).Result()
-	if err == redis.Nil {
-		googleAccessToken, err := getNewGoogleAccessToken(credPath)
-		if err != nil {
-			panic(err)
-		}
-		cachedAccessToken = googleAccessToken.AccessToken
-
-		_, err = rdb.Set(ctx, cachedAccessTokenKey, cachedAccessToken, time.Duration(googleAccessToken.ExpiresIn)*time.Second).Result()
-		if err != nil {
-			panic(err)
-		}
-	} else if err != nil {
+	cachedAccessToken, err := getCachedAccessToken(packageName, credPath)
+	if err != nil {
 		panic(err)
 	}
 
@@ -116,6 +136,8 @@ func CheckGoogle() {
 		panic(err)
 	}
 
+	voidedPurchasesHashKey := fmt.Sprintf("voidedreceiptchecker:%s:voidedPurchases", packageName)
+
 	for _, purchase := range voidedPurchaseResponse.VoidedPurchases {
 		purchaseStr, err := json.Marshal(purchase)
 		if err != nil {
@@ -127,6 +149,28 @@ func CheckGoogle() {
 			panic(err)
 		}
 	}
+}
+
+func getCachedAccessToken(packageName string, credPath string) (string, error) {
+	cachedAccessTokenKey := fmt.Sprintf("voidedreceiptchecker:%s:cachedAccessTokenKey", packageName)
+
+	cachedAccessToken, err := rdb.Get(ctx, cachedAccessTokenKey).Result()
+	if err == redis.Nil {
+		err = nil // 이건 에러가 아니다.
+		googleAccessToken, err := getNewGoogleAccessToken(credPath)
+		if err != nil {
+			panic(err)
+		}
+		cachedAccessToken = googleAccessToken.AccessToken
+
+		_, err = rdb.Set(ctx, cachedAccessTokenKey, cachedAccessToken, time.Duration(googleAccessToken.ExpiresIn)*time.Second).Result()
+		if err != nil {
+			panic(err)
+		}
+	} else if err != nil {
+		panic(err)
+	}
+	return cachedAccessToken, err
 }
 
 func getNewGoogleAccessToken(credPath string) (GoogleAccessToken, error) {

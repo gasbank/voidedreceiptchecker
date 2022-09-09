@@ -31,4 +31,5 @@ func main() {
 
 	apple.CheckIos()
 	google.CheckGoogle()
+	google.CheckReceiptByPurchaseToken()
 }
