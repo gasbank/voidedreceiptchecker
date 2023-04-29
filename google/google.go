@@ -168,6 +168,7 @@ func getCachedAccessToken(packageName string, credPath string) (string, error) {
 			panic(err)
 		}
 	} else if err != nil {
+		// Redis 서버가 실행중이 아닌고?
 		panic(err)
 	}
 	return cachedAccessToken, err
